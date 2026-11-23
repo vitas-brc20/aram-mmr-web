@@ -3666,6 +3666,146 @@ async function mmrLookupMany(ids) {
  * @param {Buffer | null} [bodyBuffer]
  * @returns {Promise<{ status: number, headers: Record<string, string>, body: string | Buffer | Uint8Array }>}
  */
+async function riotFullRecord(riotId) {
+  const cfg = riotCfg();
+  if (!cfg.apiKey) throw Object.assign(new Error("no key"), { code: "NO_KEY" });
+  const reg = (cfg.regional || "asia") + ".api.riotgames.com";
+  let gn = String(riotId || "").trim(), tl = cfg.tagLine || "KR1";
+  if (gn.indexOf("#") >= 0) { const a = gn.split("#"); gn = a[0].trim(); tl = (a[1] || "").trim() || tl; }
+  const acct = await riotGet(reg, "/riot/account/v1/accounts/by-riot-id/" + encodeURIComponent(gn) + "/" + encodeURIComponent(tl));
+  const puuid = acct.puuid;
+  const formalWho = (acct.gameName || gn) + "#" + (acct.tagLine || tl);
+
+  // 일반 칼바람(450)과 증강 칼바람(2400) 매치 ID를 각각 최대 20판씩 병렬 조회
+  const [ids450, ids2400] = await Promise.all([
+    riotGet(reg, "/lol/match/v5/matches/by-puuid/" + puuid + "/ids?queue=450&start=0&count=20").catch(() => []),
+    riotGet(reg, "/lol/match/v5/matches/by-puuid/" + puuid + "/ids?queue=2400&start=0&count=20").catch(() => [])
+  ]);
+
+  const allIds = Array.from(new Set([...(Array.isArray(ids2400) ? ids2400 : []), ...(Array.isArray(ids450) ? ids450 : [])])).slice(0, 35);
+  const [dd, pickMeta] = await Promise.all([
+    champDD(),
+    loadData("mmr/pick/meta.json").catch(() => null)
+  ]);
+
+  const matches = [];
+  for (let i = 0; i < allIds.length; i += 8) {
+    const batch = await Promise.all(allIds.slice(i, i + 8).map(id => riotGet(reg, "/lol/match/v5/matches/" + id).catch(() => null)));
+    for (const m of batch) if (m && m.info) matches.push(m);
+  }
+
+  const augDict = (pickMeta && pickMeta.augments) || {};
+  const summarize = (targetQueue) => {
+    let wins = 0, total = 0, k = 0, d = 0, a = 0, tDmg = 0, tTaken = 0, tDur = 0;
+    const by = new Map(), augBy = new Map(), recent = [], form = [];
+    for (const mt of matches) {
+      const info = mt.info || {};
+      if (Number(info.queueId) !== targetQueue) continue;
+      const p = (info.participants || []).find(x => x.puuid === puuid);
+      if (!p) continue;
+      total++;
+      const w = !!p.win;
+      if (w) wins++;
+      k += p.kills || 0; d += p.deaths || 0; a += p.assists || 0;
+      tDmg += p.totalDamageDealtToChampions || 0;
+      tTaken += p.totalDamageTaken || 0;
+      tDur += info.gameDuration || 0;
+
+      const cd = dd.get(p.championName) || { name: p.championName, icon: "" };
+      const c = by.get(p.championName) || { name: cd.name, icon: cd.icon, games: 0, wins: 0 };
+      c.games++; c.wins += w ? 1 : 0;
+      by.set(p.championName, c);
+
+      const augs = [];
+      for (let n = 1; n <= 6; n++) {
+        const aid = Number(p["playerAugment" + n] || 0);
+        if (aid > 0) {
+          const ai = augDict[String(aid)];
+          const aname = (ai && ai.n) || ("증강 #" + aid);
+          const aicon = (ai && ai.i) || "";
+          augs.push({ id: String(aid), name: aname, icon: aicon });
+          const ab = augBy.get(String(aid)) || { id: String(aid), name: aname, icon: aicon, games: 0, wins: 0 };
+          ab.games++; ab.wins += w ? 1 : 0;
+          augBy.set(String(aid), ab);
+        }
+      }
+
+      if (recent.length < 15) {
+        const its = [];
+        for (let n = 0; n < 6; n++) {
+          const id = p["item" + n];
+          its.push(id ? `https://ddragon.leagueoflegends.com/cdn/${DDV}/img/item/${id}.png` : "");
+        }
+        const dur = info.gameDuration || 0;
+        recent.push({
+          gid: mt.metadata && mt.metadata.matchId,
+          name: cd.name,
+          icon: cd.icon,
+          win: w,
+          kills: p.kills || 0,
+          deaths: p.deaths || 0,
+          assists: p.assists || 0,
+          taken: p.totalDamageTaken || 0,
+          items: its,
+          augments: augs,
+          dmg: p.totalDamageDealtToChampions || 0,
+          gold: p.goldEarned || 0,
+          mk: p.largestMultiKill || 0,
+          dur: Math.floor(dur / 60) + ":" + String(dur % 60).padStart(2, "0"),
+          date: ""
+        });
+      }
+      if (form.length < 20) form.push(w);
+    }
+    const champs = [...by.values()]
+      .map(c => ({ name: c.name, icon: c.icon, games: c.games, wins: c.wins, winRate: Math.round(c.wins / c.games * 100), thin: c.games < 3 }))
+      .sort((x, y) => y.games - x.games || y.winRate - x.winRate);
+    const augments = [...augBy.values()]
+      .map(x => ({ ...x, winRate: Math.round(x.wins / x.games * 100) }))
+      .sort((x, y) => y.games - x.games || y.winRate - x.winRate);
+    const winRate = total ? Math.round(wins / total * 100) : 0;
+    return {
+      total, wins, winRate,
+      avgKda: total ? `${(k / total).toFixed(1)}/${(d / total).toFixed(1)}/${(a / total).toFixed(1)}` : "0/0/0",
+      avgDpm: tDur > 0 ? Math.round(tDmg / (tDur / 60)) : 0,
+      avgTaken: tDur > 0 ? Math.round(tTaken / (tDur / 60)) : 0,
+      form, recent, champs, augments
+    };
+  };
+
+  const standard = summarize(450);
+  const augment = summarize(2400);
+
+  // Riot 실제 증바람 전적 기반 자체 MMR 산정
+  let riotMmr = null;
+  if (augment.total > 0) {
+    const mmrMeta = await loadData("mmr/meta.json").catch(() => null);
+    const smoothedWr = (augment.wins + 5) / (augment.total + 10);
+    const kdaParts = String(augment.avgKda).split("/").map(Number);
+    const kdaRatio = (kdaParts[0] + kdaParts[2]) / Math.max(1, kdaParts[1]);
+    const perfBonus = Math.max(-80, Math.min(120, Math.round((kdaRatio - 2.5) * 35)));
+    const score = Math.max(100, Math.min(3100, Math.round(1458 + (smoothedWr - 0.5) * 3200 + perfBonus)));
+    const cuts = (mmrMeta && mmrMeta.tiers && Array.isArray(mmrMeta.tiers.cuts)) ? mmrMeta.tiers.cuts : [120, 567, 1092, 1728, 2274, 2746];
+    const names = (mmrMeta && mmrMeta.tiers && Array.isArray(mmrMeta.tiers.names)) ? mmrMeta.tiers.names : ["아이언", "브론즈", "실버", "골드", "플래티넘", "에메랄드", "다이아몬드", "마스터", "그랜드마스터", "챌린저"];
+    let tier = 0;
+    for (let i = 0; i < cuts.length; i++) {
+      if (score >= cuts[i]) tier = i + 1;
+    }
+    if (score >= 2888) tier = Math.max(tier, 7);
+    riotMmr = {
+      mmr: score,
+      games: augment.total,
+      wins: augment.wins,
+      winRate: augment.winRate,
+      tier,
+      tierName: names[tier] || "골드",
+      source: "riot-api"
+    };
+  }
+
+  return { who: formalWho, searched: true, standard, augment, riotMmr };
+}
+
 async function webProfileLookup(rawName) {
   let q = String(rawName || "").trim();
   if (!q) return { ok: false, error: "EMPTY" };
@@ -3731,7 +3871,7 @@ async function webProfileLookup(rawName) {
     }
   })();
 
-  const riotTask = hasRiot ? summonerRecord(q).catch(e => ({ error: e.code === "NO_KEY" ? "NO_KEY" : (e.status === 404 ? "NOT_FOUND" : "FAIL") })) : Promise.resolve(null);
+  const riotTask = hasRiot ? riotFullRecord(q).catch(e => ({ error: e.code === "NO_KEY" ? "NO_KEY" : (e.status === 404 ? "NOT_FOUND" : "FAIL") })) : Promise.resolve(null);
   const [mmrData, riotData] = await Promise.all([mmrTask, riotTask]);
 
   if (!mmrData && (!riotData || riotData.error)) {
@@ -3745,11 +3885,14 @@ async function webProfileLookup(rawName) {
 
   return {
     ok: true,
-    who: (riotData && riotData.who) || q,
+    who: (riotData && !riotData.error && riotData.who) || q,
     searched: true,
     webProfile: true,
+    hasRiot: !!(riotData && !riotData.error),
     mmr: mmrData,
-    standard: (riotData && !riotData.error && riotData.standard) ? riotData.standard : null
+    riotMmr: (riotData && !riotData.error) ? riotData.riotMmr : null,
+    standard: (riotData && !riotData.error && riotData.standard && riotData.standard.total > 0) ? riotData.standard : null,
+    augment: (riotData && !riotData.error && riotData.augment && riotData.augment.total > 0) ? riotData.augment : null
   };
 }
 

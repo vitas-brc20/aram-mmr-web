@@ -4423,23 +4423,56 @@ window.__amWebMode = true;
       el.innerHTML='<p class="hint">'+(d&&d.msg?esc(d.msg):'계정을 찾지 못했습니다. 닉네임#태그 형식으로 다시 검색해보세요.')+'</p>';
       return;
     }
-    var m=d.mmr;
+    var m=d.mmr, rm=d.riotMmr, aug=d.augment, std=d.standard;
     var parts=String(d.who||"").split("#");
     var dispName=anonMode?"익명":parts[0];
     var dispTag=anonMode?"--":(parts[1]||"KR1");
+    var badgeTier=(rm&&rm.tierName)||(m&&m.tierName);
     var html='<div class="wp-card">';
     html+='<div class="wp-head"><div class="wp-name">'+esc(dispName)+' <span class="wp-tag">#'+esc(dispTag)+'</span></div>';
-    if(m&&m.tierName){
-      html+='<span class="tier" style="background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)">'+esc(m.tierName)+'</span>';
+    if(badgeTier){
+      html+='<span class="tier" style="background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)">'+esc(badgeTier)+'</span>';
     }
     html+='</div>';
-    if(m&&m.found){
+
+    if(rm){
+      html+='<div class="wp-sec-title"><span>Riot 실시간 증바람 MMR</span><span>최근 '+kfmt(rm.games)+'전 기준</span></div>';
       html+='<div class="wp-mmr-box">';
-      html+='<div class="wp-stat"><span class="wp-stat-l">증바람 MMR</span><span class="wp-stat-v acc">'+kfmt(m.mmr)+'</span></div>';
-      html+='<div class="wp-stat"><span class="wp-stat-l">전체 순위</span><span class="wp-stat-v">'+(m.rank?kfmt(m.rank)+'위':'-')+'</span></div>';
-      html+='<div class="wp-stat"><span class="wp-stat-l">집계 판수</span><span class="wp-stat-v">'+kfmt(m.games)+'판</span></div>';
+      html+='<div class="wp-stat"><span class="wp-stat-l">실제 기반 MMR</span><span class="wp-stat-v acc">'+kfmt(rm.mmr)+'</span></div>';
+      html+='<div class="wp-stat"><span class="wp-stat-l">증바람 승률</span><span class="wp-stat-v">'+rm.winRate+'%</span></div>';
+      html+='<div class="wp-stat"><span class="wp-stat-l">전적</span><span class="wp-stat-v">'+rm.wins+'승 '+(rm.games-rm.wins)+'패</span></div>';
       html+='</div>';
-      var p=m.picks||{};
+    }
+
+    if(m&&m.found){
+      if(rm){
+        html+='<div class="wp-sec-title" style="margin-top:2px"><span>외부 집계 MMR (aram-mayhem)</span><span>'+kfmt(m.mmr)+'점 · '+(m.rank?kfmt(m.rank)+'위':'-')+' ('+kfmt(m.games)+'판)</span></div>';
+      } else {
+        html+='<div class="wp-mmr-box">';
+        html+='<div class="wp-stat"><span class="wp-stat-l">증바람 MMR</span><span class="wp-stat-v acc">'+kfmt(m.mmr)+'</span></div>';
+        html+='<div class="wp-stat"><span class="wp-stat-l">전체 순위</span><span class="wp-stat-v">'+(m.rank?kfmt(m.rank)+'위':'-')+'</span></div>';
+        html+='<div class="wp-stat"><span class="wp-stat-l">집계 판수</span><span class="wp-stat-v">'+kfmt(m.games)+'판</span></div>';
+        html+='</div>';
+      }
+    }
+
+    var activeRec = (mode==="augment" ? aug : std) || aug || std;
+    if(activeRec && activeRec.total){
+      var modeLabel = (activeRec===aug) ? "증강 칼바람" : "일반 칼바람";
+      html+='<div><div class="wp-sec-title"><span>'+modeLabel+' 최근 '+kfmt(activeRec.total)+'전</span><span>'+kfmt(activeRec.wins)+'승 '+(activeRec.total-activeRec.wins)+'패 ('+activeRec.winRate+'%)</span></div><div class="wp-chips">';
+      (activeRec.champs||[]).slice(0,5).forEach(function(c){
+        html+='<div class="wp-chip" data-wp-champ="'+esc(c.name)+'">'+img(c.icon,"")+'<span class="wp-chip-nm">'+esc(c.name)+'</span><span class="wp-chip-g">'+c.winRate+'% · '+kfmt(c.games)+'판</span></div>';
+      });
+      html+='</div></div>';
+      if(activeRec.augments && activeRec.augments.length){
+        html+='<div><div class="wp-sec-title"><span>최근 고른 증강</span><span>승률 · 횟수</span></div><div class="wp-chips">';
+        activeRec.augments.slice(0,5).forEach(function(a){
+          html+='<div class="wp-chip" data-wp-aug="'+esc(a.id)+'">'+img(a.icon,"")+'<span class="wp-chip-nm">'+esc(a.name)+'</span><span class="wp-chip-g">'+a.winRate+'% · '+kfmt(a.games)+'회</span></div>';
+        });
+        html+='</div></div>';
+      }
+    } else if(m&&m.found&&m.picks){
+      var p=m.picks;
       if(p.champions&&p.champions.length){
         html+='<div><div class="wp-sec-title"><span>자주 하는 챔피언</span><span>판수</span></div><div class="wp-chips">';
         p.champions.forEach(function(c){
@@ -4461,17 +4494,10 @@ window.__amWebMode = true;
         });
         html+='</div></div>';
       }
-    } else if(!d.standard){
-      html+='<p class="hint">증바람 MMR 집계가 아직 없습니다.</p>';
+    } else {
+      html+='<p class="hint">표시할 칼바람 전적이 아직 없습니다.</p>';
     }
-    if(d.standard&&d.standard.total){
-      var s=d.standard;
-      html+='<div><div class="wp-sec-title"><span>일반 칼바람 최근 '+kfmt(s.total)+'전</span><span>'+kfmt(s.wins)+'승 '+(s.total-s.wins)+'패 ('+s.winRate+'%)</span></div><div class="wp-chips">';
-      (s.champs||[]).slice(0,5).forEach(function(c){
-        html+='<div class="wp-chip" data-wp-champ="'+esc(c.name)+'">'+img(c.icon,"")+'<span class="wp-chip-nm">'+esc(c.name)+'</span><span class="wp-chip-g">'+c.winRate+'% · '+kfmt(c.games)+'판</span></div>';
-      });
-      html+='</div></div>';
-    }
+
     html+='</div>';
     el.innerHTML=html;
     el.querySelectorAll("[data-wp-champ]").forEach(function(node){
@@ -4498,7 +4524,7 @@ window.__amWebMode = true;
           who: d.who,
           searched: true,
           standard: d.standard||{total:0,wins:0,winRate:0,champs:[],recent:[],form:[]},
-          augment: {
+          augment: d.augment||{
             total: (d.mmr&&d.mmr.games)||0,
             wins: 0,
             winRate: 0,
