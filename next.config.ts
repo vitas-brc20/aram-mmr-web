@@ -1,9 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  images: {
+    unoptimized: true,
+  },
+  serverExternalPackages: ["electron"],
+  turbopack: {
+    root: __dirname,
+  },
 };
 
 export default nextConfig;
