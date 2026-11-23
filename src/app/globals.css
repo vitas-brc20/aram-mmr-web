@@ -1943,12 +1943,15 @@ body{
 .btn-demo:hover{border-color:var(--accent-line);color:var(--accent)}
 
 /* Web summoner search bar & profile card */
-.web-search-row{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
-.web-sform{display:flex;align-items:center;gap:6px;flex:1;min-width:0}
-.web-sinput{flex:1;min-width:0;height:34px;background:var(--inset);border:1px solid var(--line-2);border-radius:8px;color:var(--tx);padding:0 10px;font-size:13.5px;font-family:inherit;outline:none;transition:border-color .12s,box-shadow .12s}
+.load-row.web-search-row{display:flex;flex-direction:column;align-items:stretch;gap:8px}
+.web-sform{display:flex;align-items:center;gap:8px;width:100%}
+.web-sinput{flex:1 1 auto;min-width:0;width:100%;height:38px;background:var(--inset);border:1px solid var(--line-2);border-radius:10px;color:var(--tx);padding:0 12px;font-size:14px;font-family:inherit;outline:none;transition:border-color .12s,box-shadow .12s}
 .web-sinput::placeholder{color:var(--dim)}
-.web-sinput:focus{border-color:var(--accent-line);box-shadow:0 0 0 2px var(--accent-soft)}
-.web-sbtn{height:34px;padding:0 12px;flex:0 0 auto;font-size:13px}
+.web-sinput:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.load-row.web-search-row #load,.load-row.web-search-row .web-sbtn{display:inline-flex;align-items:center;justify-content:center;width:auto !important;flex:0 0 auto !important;height:38px;padding:0 16px !important;font-size:14px !important;white-space:nowrap;border-radius:10px !important}
+.web-sactions{display:flex;align-items:center;gap:8px;width:100%}
+.web-sactions .btn-demo{flex:1 1 auto;height:34px;border-radius:9px;font-size:13px}
+.web-sactions .anon-tog{height:34px;padding:0 12px;font-size:13px}
 .wp-card{padding:12px 14px;display:flex;flex-direction:column;gap:12px}
 .wp-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
 .wp-name{font-size:16px;font-weight:800;color:var(--tx);letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

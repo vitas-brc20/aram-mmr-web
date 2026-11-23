@@ -4513,7 +4513,7 @@ window.__amWebMode = true;
       $("#me").innerHTML='<p class="hint">전적 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>';
     }).finally(function(){
       loadInFlight=false;
-      if(b){ b.disabled=false; b.textContent="전적 검색"; }
+      if(b){ b.disabled=false; b.textContent="검색"; }
     });
   }
   function loadMe(silent){
@@ -5392,7 +5392,7 @@ window.__amMmrFavStore = "web";
         window.dispatchEvent(new CustomEvent("am:demo-loaded", { detail: j }));
       }).finally(function(){
         demoBtn.disabled = false;
-        demoBtn.textContent = "데모";
+        demoBtn.textContent = "데모 전적 체험";
       });
     });
   }

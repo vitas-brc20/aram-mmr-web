@@ -117,27 +117,29 @@ export default function HomePage() {
                   autoComplete="off"
                 />
                 <button className="btn web-sbtn" id="load" type="submit">
-                  전적 검색
+                  검색
                 </button>
               </form>
-              <button
-                className="btn-demo"
-                id="load-demo"
-                type="button"
-                title="데모 전적으로 사주풀이·개인 통계를 체험해보세요"
-              >
-                데모
-              </button>
-              <button
-                className="anon-tog"
-                id="anonbtn"
-                type="button"
-                aria-pressed="false"
-                title="익명 모드 — 내 닉네임은 익명#--로, 전적 개요에 나오는 다른 사람 닉네임은 챔피언 이름으로 덮어요"
-              >
-                <span>익명</span>
-                <i className="anon-sw"></i>
-              </button>
+              <div className="web-sactions">
+                <button
+                  className="btn-demo"
+                  id="load-demo"
+                  type="button"
+                  title="데모 전적으로 사주풀이·개인 통계를 체험해보세요"
+                >
+                  데모 전적 체험
+                </button>
+                <button
+                  className="anon-tog"
+                  id="anonbtn"
+                  type="button"
+                  aria-pressed="false"
+                  title="익명 모드 — 내 닉네임은 익명#--로, 전적 개요에 나오는 다른 사람 닉네임은 챔피언 이름으로 덮어요"
+                >
+                  <span>익명</span>
+                  <i className="anon-sw"></i>
+                </button>
+              </div>
             </div>
             <div id="me"></div>
             <div id="mychamps" style={{ display: "none" }}>
