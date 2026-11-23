@@ -2113,7 +2113,14 @@ async function fullRuneCatalog() {
 
 // ── 소환사 검색(다른 사람) — Riot API. 키는 config.json(서버측만, 클라/발행물 노출 안 함). 키 없으면 NO_KEY. ──
 let _riotCfg = null;
-function riotCfg() { if (_riotCfg !== null) return _riotCfg; for (const cp of [path.resolve(API_DIR, "../../../config.json"), path.resolve(API_DIR, "../../config.json"), "E:\\프린서버\\plugins\\Skript\\scripts\\aram_mayhem_auto\\data\\config.json"]) { try { const r = JSON.parse(readFileSync(cp, "utf8")).riot; if (r && r.apiKey) { return (_riotCfg = r); } } catch {} } return (_riotCfg = {}); }
+function riotCfg() {
+  if (process.env.RIOT_API_KEY) {
+    return { apiKey: process.env.RIOT_API_KEY, regional: process.env.RIOT_REGIONAL || "asia", tagLine: process.env.RIOT_TAGLINE || "KR1" };
+  }
+  if (_riotCfg !== null) return _riotCfg;
+  for (const cp of [path.resolve(API_DIR, "../../../config.json"), path.resolve(API_DIR, "../../config.json"), "E:\\프린서버\\plugins\\Skript\\scripts\\aram_mayhem_auto\\data\\config.json"]) { try { const r = JSON.parse(readFileSync(cp, "utf8")).riot; if (r && r.apiKey) { return (_riotCfg = r); } } catch {} }
+  return (_riotCfg = {});
+}
 function riotGet(host, p) { return new Promise((resolve, reject) => { const req = https.get("https://" + host + p, { headers: { "X-Riot-Token": riotCfg().apiKey || "" }, timeout: 9000 }, r => { if (r.statusCode !== 200) { r.resume(); return reject(Object.assign(new Error("riot " + r.statusCode), { status: r.statusCode })); } const ch = []; r.on("data", c => ch.push(c)); r.on("end", () => { try { resolve(JSON.parse(Buffer.concat(ch).toString("utf8"))); } catch (e) { reject(e); } }); }); req.on("timeout", () => req.destroy(new Error("timeout"))); req.on("error", reject); }); }
 let _champDD = null;
 async function champDD() { if (_champDD) return _champDD; const j = await fetchJsonU(`https://ddragon.leagueoflegends.com/cdn/${DDV}/data/ko_KR/champion.json`); const byName = new Map(); for (const key in (j.data || {})) { const c = j.data[key]; byName.set(key, { name: c.name, icon: `https://ddragon.leagueoflegends.com/cdn/${DDV}/img/champion/${c.image.full}` }); } return (_champDD = byName); }
@@ -3652,6 +3659,107 @@ async function mmrLookupMany(ids) {
  * @param {Buffer | null} [bodyBuffer]
  * @returns {Promise<{ status: number, headers: Record<string, string>, body: string | Buffer | Uint8Array }>}
  */
+/**
+ * @param {string} pathname
+ * @param {string} [method]
+ * @param {URLSearchParams} [searchParams]
+ * @param {Buffer | null} [bodyBuffer]
+ * @returns {Promise<{ status: number, headers: Record<string, string>, body: string | Buffer | Uint8Array }>}
+ */
+async function webProfileLookup(rawName) {
+  let q = String(rawName || "").trim();
+  if (!q) return { ok: false, error: "EMPTY" };
+  if (q.indexOf("#") < 0) q = q + "#KR1";
+  const key = mmrKey(q);
+  const hasRiot = !!riotCfg().apiKey;
+
+  const mmrTask = (async () => {
+    try {
+      const [apiRes, mmrMeta, pickMeta] = await Promise.all([
+        mmrApi([key], true).catch(() => null),
+        loadData("mmr/meta.json").catch(() => null),
+        loadData("mmr/pick/meta.json").catch(() => null)
+      ]);
+      let hit = null, pick = null;
+      if (apiRes && apiRes.ok && Array.isArray(apiRes.r) && apiRes.r[0] && !(apiRes.r[0].e)) {
+        const x = apiRes.r[0];
+        hit = Array.isArray(x.m) ? x.m : null;
+        pick = x.k || null;
+      } else {
+        const sh = mmrShardOf(key);
+        const shard = await loadData("mmr/" + sh + ".json").catch(() => null);
+        hit = shard && shard.p ? shard.p[key] : null;
+        if (hit) {
+          const pShard = await loadData("mmr/pick/" + sh + ".json").catch(() => null);
+          pick = pShard && pShard.p ? pShard.p[key] : null;
+        }
+      }
+      if (!hit) return null;
+      const tiers = (mmrMeta && Array.isArray(mmrMeta.tiers)) ? mmrMeta.tiers : ["아이언", "브론즈", "실버", "골드", "플래티넘", "에메랄드", "다이아몬드", "마스터", "그랜드마스터", "챌린저"];
+      const tierIdx = Number(hit[3]);
+      const tierName = (Number.isFinite(tierIdx) && tierIdx >= 0 && tierIdx < tiers.length) ? tiers[tierIdx] : null;
+      const resolvePick = (arr, kind) => {
+        if (!Array.isArray(arr)) return [];
+        const dict = pickMeta && (kind === "champion" ? pickMeta.champions : kind === "augment" ? pickMeta.augments : pickMeta.items);
+        return arr.map(([id, cnt]) => {
+          const info = dict && dict[String(id)];
+          return {
+            id: String(id),
+            name: (info && info.n) || String(id),
+            icon: (info && info.i) || (kind === "item" ? `https://ddragon.leagueoflegends.com/cdn/${DDV}/img/item/${id}.png` : ""),
+            games: Number(cnt) || 0
+          };
+        });
+      };
+      const rawPicks = Array.isArray(pick) ? pick : [];
+      return {
+        found: true,
+        mmr: hit[0],
+        games: hit[1],
+        rank: hit[2] || 0,
+        tier: Number.isFinite(tierIdx) ? tierIdx : null,
+        tierName,
+        minGames: Number(mmrMeta && mmrMeta.minGames) || 10,
+        picks: {
+          champions: resolvePick(rawPicks[0], "champion"),
+          augments: resolvePick(rawPicks[1], "augment"),
+          items: resolvePick(rawPicks[2], "item")
+        }
+      };
+    } catch {
+      return null;
+    }
+  })();
+
+  const riotTask = hasRiot ? summonerRecord(q).catch(e => ({ error: e.code === "NO_KEY" ? "NO_KEY" : (e.status === 404 ? "NOT_FOUND" : "FAIL") })) : Promise.resolve(null);
+  const [mmrData, riotData] = await Promise.all([mmrTask, riotTask]);
+
+  if (!mmrData && (!riotData || riotData.error)) {
+    return {
+      ok: false,
+      who: q,
+      error: (riotData && riotData.error === "NOT_FOUND") ? "NOT_FOUND" : "NOT_FOUND",
+      msg: "해당 계정의 칼바람 전적을 찾지 못했습니다. 닉네임#태그를 확인해주세요."
+    };
+  }
+
+  return {
+    ok: true,
+    who: (riotData && riotData.who) || q,
+    searched: true,
+    webProfile: true,
+    mmr: mmrData,
+    standard: (riotData && !riotData.error && riotData.standard) ? riotData.standard : null
+  };
+}
+
+/**
+ * @param {string} pathname
+ * @param {string} [method]
+ * @param {URLSearchParams} [searchParams]
+ * @param {Buffer | null} [bodyBuffer]
+ * @returns {Promise<{ status: number, headers: Record<string, string>, body: string | Buffer | Uint8Array }>}
+ */
 export function handleApiRequest(pathname, method = "GET", searchParams = new URLSearchParams(), bodyBuffer = null) {
   return new Promise(async (resolve) => {
     let statusCode = 200;
@@ -4114,6 +4222,10 @@ export function handleApiRequest(pathname, method = "GET", searchParams = new UR
     if (u.pathname === "/api/summoner") { // 다른 소환사 검색(Riot API, 일반 ARAM 450)
       try { return send(res, 200, "application/json; charset=utf-8", JSON.stringify(await summonerRecord(u.searchParams.get("name") || ""))); }
       catch (e) { return send(res, 200, "application/json; charset=utf-8", JSON.stringify({ error: e.code === "NO_KEY" ? "NO_KEY" : (e.status === 404 ? "NOT_FOUND" : "FAIL"), msg: String(e.message || e) })); }
+    }
+    if (u.pathname === "/api/web-profile") {
+      try { return send(res, 200, "application/json; charset=utf-8", JSON.stringify(await webProfileLookup(u.searchParams.get("name") || ""))); }
+      catch (e) { return send(res, 500, "application/json; charset=utf-8", JSON.stringify({ ok: false, error: "FAIL", msg: String(e && e.message || e) })); }
     }
     if (u.pathname === "/api/share" && req.method === "POST") { // 링크 공유 — 클라 PNG를 워커 /share로 전달하고 공개 URL 반환(CORS 우회)
       try {

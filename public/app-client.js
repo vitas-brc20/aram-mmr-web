@@ -4415,16 +4415,121 @@ window.__amWebMode = true;
   }
   // 전적 로드 — 수동 클릭 + 자동 갱신 공용. silent=true면 스피너/버튼상태 안 건드리고 조용히 새로고침(깜빡임 없음).
   var loadInFlight=false, lastLoadAt=0;
-  window.addEventListener("am:demo-loaded", function(ev){ if(ev&&ev.detail){ lastMe=ev.detail; lastLoadAt=Date.now(); renderMe(true); } });
-  function loadMe(silent){
+  var webProfileData=null;
+  window.addEventListener("am:demo-loaded", function(ev){ if(ev&&ev.detail){ webProfileData=null; lastMe=ev.detail; lastLoadAt=Date.now(); renderMe(true); } });
+  function renderWebProfile(d){
+    var el=$("#me"); if(!el) return;
+    if(!d||!d.ok){
+      el.innerHTML='<p class="hint">'+(d&&d.msg?esc(d.msg):'계정을 찾지 못했습니다. 닉네임#태그 형식으로 다시 검색해보세요.')+'</p>';
+      return;
+    }
+    var m=d.mmr;
+    var parts=String(d.who||"").split("#");
+    var dispName=anonMode?"익명":parts[0];
+    var dispTag=anonMode?"--":(parts[1]||"KR1");
+    var html='<div class="wp-card">';
+    html+='<div class="wp-head"><div class="wp-name">'+esc(dispName)+' <span class="wp-tag">#'+esc(dispTag)+'</span></div>';
+    if(m&&m.tierName){
+      html+='<span class="tier" style="background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent-line)">'+esc(m.tierName)+'</span>';
+    }
+    html+='</div>';
+    if(m&&m.found){
+      html+='<div class="wp-mmr-box">';
+      html+='<div class="wp-stat"><span class="wp-stat-l">증바람 MMR</span><span class="wp-stat-v acc">'+kfmt(m.mmr)+'</span></div>';
+      html+='<div class="wp-stat"><span class="wp-stat-l">전체 순위</span><span class="wp-stat-v">'+(m.rank?kfmt(m.rank)+'위':'-')+'</span></div>';
+      html+='<div class="wp-stat"><span class="wp-stat-l">집계 판수</span><span class="wp-stat-v">'+kfmt(m.games)+'판</span></div>';
+      html+='</div>';
+      var p=m.picks||{};
+      if(p.champions&&p.champions.length){
+        html+='<div><div class="wp-sec-title"><span>자주 하는 챔피언</span><span>판수</span></div><div class="wp-chips">';
+        p.champions.forEach(function(c){
+          html+='<div class="wp-chip" data-wp-champ="'+esc(c.name)+'">'+img(c.icon,"")+'<span class="wp-chip-nm">'+esc(c.name)+'</span><span class="wp-chip-g">'+kfmt(c.games)+'판</span></div>';
+        });
+        html+='</div></div>';
+      }
+      if(p.augments&&p.augments.length){
+        html+='<div><div class="wp-sec-title"><span>자주 고르는 증강</span><span>선택</span></div><div class="wp-chips">';
+        p.augments.forEach(function(a){
+          html+='<div class="wp-chip" data-wp-aug="'+esc(a.id)+'">'+img(a.icon,"")+'<span class="wp-chip-nm">'+esc(a.name)+'</span><span class="wp-chip-g">'+kfmt(a.games)+'회</span></div>';
+        });
+        html+='</div></div>';
+      }
+      if(p.items&&p.items.length){
+        html+='<div><div class="wp-sec-title"><span>자주 가는 아이템</span><span>선택</span></div><div class="wp-chips">';
+        p.items.forEach(function(it){
+          html+='<div class="wp-chip" data-wp-item="'+esc(it.id)+'">'+img(it.icon,"")+'<span class="wp-chip-nm">'+esc(it.name)+'</span><span class="wp-chip-g">'+kfmt(it.games)+'회</span></div>';
+        });
+        html+='</div></div>';
+      }
+    } else if(!d.standard){
+      html+='<p class="hint">증바람 MMR 집계가 아직 없습니다.</p>';
+    }
+    if(d.standard&&d.standard.total){
+      var s=d.standard;
+      html+='<div><div class="wp-sec-title"><span>일반 칼바람 최근 '+kfmt(s.total)+'전</span><span>'+kfmt(s.wins)+'승 '+(s.total-s.wins)+'패 ('+s.winRate+'%)</span></div><div class="wp-chips">';
+      (s.champs||[]).slice(0,5).forEach(function(c){
+        html+='<div class="wp-chip" data-wp-champ="'+esc(c.name)+'">'+img(c.icon,"")+'<span class="wp-chip-nm">'+esc(c.name)+'</span><span class="wp-chip-g">'+c.winRate+'% · '+kfmt(c.games)+'판</span></div>';
+      });
+      html+='</div></div>';
+    }
+    html+='</div>';
+    el.innerHTML=html;
+    el.querySelectorAll("[data-wp-champ]").forEach(function(node){
+      node.onclick=function(){ openChamp(node.getAttribute("data-wp-champ")); };
+    });
+    el.querySelectorAll("[data-wp-aug]").forEach(function(node){
+      node.onclick=function(){ if(mode!=="augment") setMode("augment"); openAugment(node.getAttribute("data-wp-aug")); };
+    });
+    el.querySelectorAll("[data-wp-item]").forEach(function(node){
+      node.onclick=function(){ openItem(node.getAttribute("data-wp-item")); };
+    });
+  }
+  function searchWebProfile(rawName){
+    var q=String(rawName||"").trim();
+    if(!q){ $("#me").innerHTML='<p class="hint">계정명#태그를 입력해주세요 (예: 주대각#kr12).</p>'; return; }
     if(loadInFlight) return; loadInFlight=true;
     var b=$("#load");
-    if(!silent){ b.disabled=true; b.textContent="불러오는 중…"; $("#me").innerHTML='<p class="hint"><span class="spin"></span> 전적 분석 중…</p>'; _meSig=null; } // DOM 을 덮었으니 지문 무효화 — 안 그러면 같은 데이터일 때 스피너가 그대로 남는다
-    return fetch("/api/me").then(function(r){return r.json()}).then(function(j){ lastMe=j; lastLoadAt=Date.now(); renderMe(); })
-      .catch(function(){ if(!silent){ $("#me").innerHTML='<p class="hint">웹 버전에서는 로컬 롤 클라이언트(LCU)에 직접 연결할 수 없습니다. 옆의 [데모 체험] 버튼을 눌러보세요!</p>'; _meSig=null; } })
-      .finally(function(){ loadInFlight=false; if(!silent){ b.disabled=false; b.textContent="롤에서 내 전적 불러오기"; } });
+    if(b){ b.disabled=true; b.textContent="검색 중…"; }
+    $("#me").innerHTML='<p class="hint"><span class="spin"></span> 계정 전적 조회 중…</p>'; _meSig=null;
+    fetch("/api/web-profile?name="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){
+      webProfileData=d;
+      if(d&&d.ok){
+        lastMe={
+          who: d.who,
+          searched: true,
+          standard: d.standard||{total:0,wins:0,winRate:0,champs:[],recent:[],form:[]},
+          augment: {
+            total: (d.mmr&&d.mmr.games)||0,
+            wins: 0,
+            winRate: 0,
+            champs: (d.mmr&&d.mmr.picks&&d.mmr.picks.champions)||[],
+            recent: [],
+            form: []
+          }
+        };
+      }
+      renderWebProfile(d);
+    }).catch(function(){
+      $("#me").innerHTML='<p class="hint">전적 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.</p>';
+    }).finally(function(){
+      loadInFlight=false;
+      if(b){ b.disabled=false; b.textContent="전적 검색"; }
+    });
   }
-  $("#load").onclick=function(){ loadMe(false); };
+  function loadMe(silent){
+    if(webProfileData){ renderWebProfile(webProfileData); return Promise.resolve(); }
+    if(silent){
+      if(!lastMe){ $("#me").innerHTML='<p class="hint">위 검색창에 <b>계정명#태그</b>를 입력해 전적을 검색하거나, <b>데모</b> 버튼으로 체험해보세요.</p>'; }
+      return Promise.resolve();
+    }
+    var inp=$("#summoner-input");
+    if(inp && inp.value.trim()){ searchWebProfile(inp.value); return Promise.resolve(); }
+    $("#me").innerHTML='<p class="hint">위 검색창에 <b>계정명#태그</b>를 입력해 전적을 검색하거나, <b>데모</b> 버튼으로 체험해보세요.</p>';
+    return Promise.resolve();
+  }
+  var sform=$("#summoner-search-form");
+  if(sform){ sform.onsubmit=function(e){ e.preventDefault(); var inp=$("#summoner-input"); searchWebProfile(inp?inp.value:""); }; }
+  else if($("#load")){ $("#load").onclick=function(){ loadMe(false); }; }
   $("#anonbtn").onclick=function(){ anonMode=!anonMode; try{localStorage.setItem('am_anon',anonMode?'on':'off');}catch(e){} updateAnonBtn(); if(lastMe)renderMe(true); if($("#champpage .fortune-wrap"))openRecordReading(); rerenderScoreboard(); }; // 익명 토글: 닉/태그·사주풀이 + 열려 있는 전적 개요(10인 닉네임) 즉시 갱신
   updateAnonBtn();
   var startModeParam=initialParams.get("mode");
@@ -5287,7 +5392,7 @@ window.__amMmrFavStore = "web";
         window.dispatchEvent(new CustomEvent("am:demo-loaded", { detail: j }));
       }).finally(function(){
         demoBtn.disabled = false;
-        demoBtn.textContent = "데모 체험";
+        demoBtn.textContent = "데모";
       });
     });
   }

@@ -107,17 +107,26 @@ export default function HomePage() {
                 </button>
               </div>
             </h3>
-            <div className="pad load-row">
-              <button className="btn" id="load" type="button">
-                내 전적 불러오기
-              </button>
+            <div className="pad load-row web-search-row">
+              <form id="summoner-search-form" className="web-sform">
+                <input
+                  id="summoner-input"
+                  className="web-sinput"
+                  type="text"
+                  placeholder="계정명#태그 (예: 주대각#kr12)"
+                  autoComplete="off"
+                />
+                <button className="btn web-sbtn" id="load" type="submit">
+                  전적 검색
+                </button>
+              </form>
               <button
                 className="btn-demo"
                 id="load-demo"
                 type="button"
                 title="데모 전적으로 사주풀이·개인 통계를 체험해보세요"
               >
-                데모 체험
+                데모
               </button>
               <button
                 className="anon-tog"
